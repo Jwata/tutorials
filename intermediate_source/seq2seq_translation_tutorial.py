@@ -794,15 +794,15 @@ def evaluateRandomly(encoder, decoder, n=10):
 
 hidden_size = 256
 
-encoder1 = EncoderRNNWrapper(input_lang.n_words, hidden_size)
-if torch.cuda.device_count() > 1:
-    encoder1 = nn.DataParallel(encoder1)
+encoder1 = EncoderRNN(input_lang.n_words, hidden_size)
+# if torch.cuda.device_count() > 1:
+#    encoder1 = nn.DataParallel(encoder1)
 encoder1.to(device)
 encoder1.load_state_dict(torch.load(ENCODER_MODEL_PATH))
 
 attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1)
-if torch.cuda.device_count() > 1:
-    attn_decoder1 = nn.DataParallel(attn_decoder1)
+# if torch.cuda.device_count() > 1:
+#    attn_decoder1 = nn.DataParallel(attn_decoder1)
 attn_decoder1.to(device)
 attn_decoder1.load_state_dict(torch.load(DECODER_MODEL_PATH))
 
