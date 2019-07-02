@@ -1,0 +1,25 @@
+FROM nvidia/cuda:9.0-base
+
+RUN apt update && apt upgrade -y
+
+RUN apt-get update -y && \
+  apt-get install -y --no-install-recommends \
+  python3.5 \
+  python3.5-dev \
+  python3-pip \
+  python3-setuptools \
+  python3-wheel
+
+RUN apt-get install -y --no-install-recommends \
+  git
+
+RUN ln -s /usr/bin/python3 /usr/local/bin/python
+RUN ln -s /usr/bin/pip3 /usr/local/bin/pip
+
+RUN pip install --upgrade pip
+
+WORKDIR /work
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt

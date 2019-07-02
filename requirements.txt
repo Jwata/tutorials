@@ -23,3 +23,5 @@ scikit-image
 # this is a workaround to the issue.
 pillow==4.1.1
 wget
+
+ipdb

@@ -235,7 +235,7 @@ def readLangs(lang1, lang2, reverse=False):
 # earlier).
 #
 
-MAX_LENGTH = 10
+MAX_LENGTH = 20
 
 eng_prefixes = (
     "i am ", "i m ",
@@ -248,9 +248,11 @@ eng_prefixes = (
 
 
 def filterPair(p):
+    # return len(p[0].split(' ')) < MAX_LENGTH and \
+    #     len(p[1].split(' ')) < MAX_LENGTH and \
+    #    p[1].startswith(eng_prefixes)
     return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH and \
-        p[1].startswith(eng_prefixes)
+        len(p[1].split(' ')) < MAX_LENGTH
 
 
 def filterPairs(pairs):
@@ -625,7 +627,10 @@ def timeSince(since, percent):
 # of examples, time so far, estimated time) and average loss.
 #
 
-def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, learning_rate=0.01):
+ENCODER_MODEL_PATH = '/work/data/models/seq2seq_encoder.model'
+DECODER_MODEL_PATH = '/work/data/models/seq2seq_decoder.model'
+
+def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, save_every=5000, learning_rate=0.01):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
@@ -652,6 +657,11 @@ def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, lear
             print_loss_total = 0
             print('%s (%d %d%%) %.4f' % (timeSince(start, iter / n_iters),
                                          iter, iter / n_iters * 100, print_loss_avg))
+
+        if iter % save_every == 0:
+           print('saving models')
+           torch.save(encoder.state_dict(), ENCODER_MODEL_PATH)
+           torch.save(decoder.state_dict(), DECODER_MODEL_PATH)
 
         if iter % plot_every == 0:
             plot_loss_avg = plot_loss_total / plot_every
@@ -767,10 +777,14 @@ def evaluateRandomly(encoder, decoder, n=10):
 #
 
 hidden_size = 256
-encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
-attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
 
-trainIters(encoder1, attn_decoder1, 75000, print_every=5000)
+encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+encoder1.load_state_dict(torch.load(ENCODER_MODEL_PATH))
+
+attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+attn_decoder1.load_state_dict(torch.load(DECODER_MODEL_PATH))
+
+trainIters(encoder1, attn_decoder1, 1000000, print_every=100)
 
 ######################################################################
 #
