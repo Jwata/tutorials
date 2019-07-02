@@ -353,6 +353,14 @@ class EncoderRNN(nn.Module):
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
+class EncoderRNNWrapper(nn.Module):
+    def __init__(self, *args):
+        super(EncoderRNNWrapper, self).__init__()
+        self.module = EncoderRNN(*args)
+
+    def forward(self, input_):
+        return self.module(input_)
+
 ######################################################################
 # The Decoder
 # -----------
@@ -475,6 +483,14 @@ class AttnDecoderRNN(nn.Module):
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)
 
+
+class AttnDecoderRNNWrapper(nn.Module):
+    def __init__(self, *args, **kw):
+        super(AttnDecoderRNNWrapper, self).__init__()
+        self.module = AttnDecoderRNN(*args, **kw)
+
+    def forward(self, input_):
+        return self.module.forward(input_)
 
 ######################################################################
 # .. note:: There are other forms of attention that work around the length
@@ -778,10 +794,16 @@ def evaluateRandomly(encoder, decoder, n=10):
 
 hidden_size = 256
 
-encoder1 = EncoderRNN(input_lang.n_words, hidden_size).to(device)
+encoder1 = EncoderRNNWrapper(input_lang.n_words, hidden_size)
+if torch.cuda.device_count() > 1:
+    encoder1 = nn.DataParallel(encoder1)
+encoder1.to(device)
 encoder1.load_state_dict(torch.load(ENCODER_MODEL_PATH))
 
-attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1).to(device)
+attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1)
+if torch.cuda.device_count() > 1:
+    attn_decoder1 = nn.DataParallel(attn_decoder1)
+attn_decoder1.to(device)
 attn_decoder1.load_state_dict(torch.load(DECODER_MODEL_PATH))
 
 trainIters(encoder1, attn_decoder1, 1000000, print_every=100)
