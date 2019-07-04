@@ -85,6 +85,7 @@ And for more, read the papers that introduced these topics:
 """
 from __future__ import unicode_literals, print_function, division
 from io import open
+import os
 import unicodedata
 import string
 import re
@@ -252,7 +253,7 @@ def filterPair(p):
     #     len(p[1].split(' ')) < MAX_LENGTH and \
     #    p[1].startswith(eng_prefixes)
     return len(p[0].split(' ')) < MAX_LENGTH and \
-        len(p[1].split(' ')) < MAX_LENGTH
+      len(p[1].split(' ')) < MAX_LENGTH
 
 
 def filterPairs(pairs):
@@ -342,16 +343,18 @@ class EncoderRNN(nn.Module):
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(input_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.lstm = nn.LSTM(hidden_size, hidden_size)
 
     def forward(self, input, hidden):
         embedded = self.embedding(input).view(1, 1, -1)
         output = embedded
-        output, hidden = self.gru(output, hidden)
+        output, hidden = self.lstm(output, hidden)
         return output, hidden
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        h_0 = torch.zeros(1, 1, self.hidden_size, device=device)
+        c_0 = torch.zeros(1, 1, self.hidden_size, device=device)
+        return (h_0, c_0)
 
 class EncoderRNNWrapper(nn.Module):
     def __init__(self, *args):
@@ -395,7 +398,7 @@ class DecoderRNN(nn.Module):
         self.hidden_size = hidden_size
 
         self.embedding = nn.Embedding(output_size, hidden_size)
-        self.gru = nn.GRU(hidden_size, hidden_size)
+        self.gru = nn.LSTM(hidden_size, hidden_size)
         self.out = nn.Linear(hidden_size, output_size)
         self.softmax = nn.LogSoftmax(dim=1)
 
@@ -456,18 +459,18 @@ class AttnDecoderRNN(nn.Module):
         self.max_length = max_length
 
         self.embedding = nn.Embedding(self.output_size, self.hidden_size)
-        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.attn = nn.Linear(self.hidden_size * 3, self.max_length)
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
-        self.gru = nn.GRU(self.hidden_size, self.hidden_size)
+        self.lstm = nn.LSTM(self.hidden_size, self.hidden_size)
         self.out = nn.Linear(self.hidden_size, self.output_size)
 
     def forward(self, input, hidden, encoder_outputs):
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
 
-        attn_weights = F.softmax(
-            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
+        embedded_ = torch.cat((embedded[0], hidden[0][0], hidden[1][0]), 1)
+        attn_weights = F.softmax(self.attn(embedded_), dim=1)
         attn_applied = torch.bmm(attn_weights.unsqueeze(0),
                                  encoder_outputs.unsqueeze(0))
 
@@ -475,13 +478,15 @@ class AttnDecoderRNN(nn.Module):
         output = self.attn_combine(output).unsqueeze(0)
 
         output = F.relu(output)
-        output, hidden = self.gru(output, hidden)
+        output, hidden = self.lstm(output, hidden)
 
         output = F.log_softmax(self.out(output[0]), dim=1)
         return output, hidden, attn_weights
 
     def initHidden(self):
-        return torch.zeros(1, 1, self.hidden_size, device=device)
+        h_0 = torch.zeros(1, 1, self.hidden_size, device=device)
+        c_0 = torch.zeros(1, 1, self.hidden_size, device=device)
+        return (h_0, c_0)
 
 
 class AttnDecoderRNNWrapper(nn.Module):
@@ -643,17 +648,17 @@ def timeSince(since, percent):
 # of examples, time so far, estimated time) and average loss.
 #
 
-ENCODER_MODEL_PATH = '/work/data/models/seq2seq_encoder.model'
-DECODER_MODEL_PATH = '/work/data/models/seq2seq_decoder.model'
+ENCODER_MODEL_PATH = '/work/data/models/20190704/seq2seq_encoder_lstm.model'
+DECODER_MODEL_PATH = '/work/data/models/20190704/seq2seq_decoder_lstm.model'
 
-def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, save_every=5000, learning_rate=0.01):
+def trainIters(encoder, decoder, n_iters, print_every=1000, plot_every=100, save_every=5000, learning_rate=0.001):
     start = time.time()
     plot_losses = []
     print_loss_total = 0  # Reset every print_every
     plot_loss_total = 0  # Reset every plot_every
 
-    encoder_optimizer = optim.SGD(encoder.parameters(), lr=learning_rate)
-    decoder_optimizer = optim.SGD(decoder.parameters(), lr=learning_rate)
+    encoder_optimizer = optim.Adam(encoder.parameters(), lr=learning_rate)
+    decoder_optimizer = optim.Adam(decoder.parameters(), lr=learning_rate)
     training_pairs = [tensorsFromPair(random.choice(pairs))
                       for i in range(n_iters)]
     criterion = nn.NLLLoss()
@@ -798,15 +803,17 @@ encoder1 = EncoderRNN(input_lang.n_words, hidden_size)
 # if torch.cuda.device_count() > 1:
 #    encoder1 = nn.DataParallel(encoder1)
 encoder1.to(device)
-encoder1.load_state_dict(torch.load(ENCODER_MODEL_PATH))
+if os.path.exists(ENCODER_MODEL_PATH):
+    encoder1.load_state_dict(torch.load(ENCODER_MODEL_PATH))
 
 attn_decoder1 = AttnDecoderRNN(hidden_size, output_lang.n_words, dropout_p=0.1)
 # if torch.cuda.device_count() > 1:
 #    attn_decoder1 = nn.DataParallel(attn_decoder1)
 attn_decoder1.to(device)
-attn_decoder1.load_state_dict(torch.load(DECODER_MODEL_PATH))
+if os.path.exists(DECODER_MODEL_PATH):
+    attn_decoder1.load_state_dict(torch.load(DECODER_MODEL_PATH))
 
-trainIters(encoder1, attn_decoder1, 1000000, print_every=100)
+trainIters(encoder1, attn_decoder1, 200000, print_every=1000)
 
 ######################################################################
 #
