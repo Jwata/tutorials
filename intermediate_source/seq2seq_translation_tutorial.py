@@ -345,11 +345,22 @@ class EncoderRNN(nn.Module):
         self.embedding = nn.Embedding(input_size, hidden_size)
         self.lstm = nn.LSTM(hidden_size, hidden_size)
 
-    def forward(self, input, hidden):
-        embedded = self.embedding(input).view(1, 1, -1)
-        output = embedded
-        output, hidden = self.lstm(output, hidden)
-        return output, hidden
+    def forward(self, input):
+        input_length = input.size(0)
+        input_lengths = torch.Tensor([input_length])
+        input_ = torch.zeros((MAX_LENGTH, 1), dtype=torch.long)
+        input_[:input_length] = input
+
+        hidden = self.initHidden()
+        embedded = self.embedding(input_).view(1, MAX_LENGTH, -1)
+        packed = nn.utils.rnn.pack_padded_sequence(
+            embedded, input_lengths, batch_first=True)
+
+        output, hidden = self.lstm(packed, hidden)
+        output, _ = nn.utils.rnn.pad_packed_sequence(
+            output, batch_first=True, total_length=MAX_LENGTH)
+
+        return output[0], hidden
 
     def initHidden(self):
         h_0 = torch.zeros(1, 1, self.hidden_size, device=device)
@@ -469,8 +480,9 @@ class AttnDecoderRNN(nn.Module):
         embedded = self.embedding(input).view(1, 1, -1)
         embedded = self.dropout(embedded)
 
-        embedded_ = torch.cat((embedded[0], hidden[0][0], hidden[1][0]), 1)
+        embedded_ = torch.cat((embedded[0], hidden[0][-1], hidden[1][-1]), 1)
         attn_weights = F.softmax(self.attn(embedded_), dim=1)
+
         attn_applied = torch.bmm(attn_weights.unsqueeze(0),
                                  encoder_outputs.unsqueeze(0))
 
@@ -562,22 +574,14 @@ teacher_forcing_ratio = 0.5
 
 
 def train(input_tensor, target_tensor, encoder, decoder, encoder_optimizer, decoder_optimizer, criterion, max_length=MAX_LENGTH):
-    encoder_hidden = encoder.initHidden()
-
     encoder_optimizer.zero_grad()
     decoder_optimizer.zero_grad()
 
-    input_length = input_tensor.size(0)
     target_length = target_tensor.size(0)
-
-    encoder_outputs = torch.zeros(max_length, encoder.hidden_size, device=device)
 
     loss = 0
 
-    for ei in range(input_length):
-        encoder_output, encoder_hidden = encoder(
-            input_tensor[ei], encoder_hidden)
-        encoder_outputs[ei] = encoder_output[0, 0]
+    encoder_outputs, encoder_hidden = encoder(input_tensor)
 
     decoder_input = torch.tensor([[SOS_token]], device=device)
 
